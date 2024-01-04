@@ -6,6 +6,9 @@ import json
 import time
 from datetime import datetime, timedelta
 from extensions import db
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///transactions.db'
@@ -123,4 +126,4 @@ def index():
         return render_template('index.html', transactions=latest_transactions, filtered=False)
 
 if __name__ == '__main__':
-    app.run()
+    app.run(host=os.getenv('HOST'), port=os.getenv('PORT'))
