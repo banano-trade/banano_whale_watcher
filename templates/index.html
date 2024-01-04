@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Banano Transactions</title>
+    <!-- Include Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1 class="mt-4 mb-3">Banano Transaction Filter</h1>
+
+        <!-- Transaction Filter Form -->
+        <form action="/" method="post" class="mb-4">
+            <div class="form-group">
+                <label for="time_frame">Select Time Frame:</label>
+                <select name="time_frame" id="time_frame" class="form-control" onchange="toggleDateInputs()">
+                    <option value="">Custom Date Range</option>
+                    <option value="24h" selected>Last 24 Hours</option>
+                    <option value="7d">Last 7 Days</option>
+                    <option value="30d">Last 30 Days</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="min_amount">Minimum Amount:</label>
+                <input type="number" id="min_amount" name="min_amount" min="10000" class="form-control" required>
+            </div>
+
+            <!-- Start Date Field -->
+            <div class="form-group">
+                <label for="start_date">Start Date:</label>
+                <input type="date" id="start_date" name="start_date" class="form-control">
+            </div>
+
+            <!-- End Date Field -->
+            <div class="form-group">
+                <label for="end_date">End Date:</label>
+                <input type="date" id="end_date" name="end_date" class="form-control">
+            </div>
+
+            <button type="submit" class="btn btn-primary">Filter Transactions</button>
+        </form>
+
+        <!-- Latest Transactions Table -->
+        <h2>{{ 'Filtered Transactions' if filtered else 'Latest Transactions with >10000 BAN' }}</h2>
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Account</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for transaction in transactions %}
+                <tr>
+                    <td>{{ transaction.time }}</td>
+                    <td>{{ transaction.account }}</td>
+                    <td>
+                        <a href="https://creeper.banano.cc/hash/{{ transaction.hash }}" target="_blank">{{
+                            transaction.amount_decimal }} BAN</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script>
+        document.getElementById('min_amount').min = {{ MINIMUM_DETECTABLE_BAN_AMOUNT }};
+        function toggleDateInputs() {
+            var selectBox = document.getElementById('time_frame');
+            var startDateInput = document.getElementById('start_date');
+            var endDateInput = document.getElementById('end_date');
+            var isCustomDate = selectBox.value === '';
+
+            startDateInput.disabled = !isCustomDate;
+            endDateInput.disabled = !isCustomDate;
+
+            // Toggle the 'required' attribute based on the selection
+            startDateInput.required = isCustomDate;
+            endDateInput.required = isCustomDate;
+        }
+        toggleDateInputs(); // Run on load
+    </script>
+</body>
+
+</html>
