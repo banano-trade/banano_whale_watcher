@@ -123,7 +123,7 @@ def index():
 
     else:
         latest_transactions = Transaction.query.order_by(Transaction.time.desc()).limit(50).all()
-        return render_template('index.html', transactions=latest_transactions, filtered=False)
+        return render_template('index.html', transactions=latest_transactions, filtered=False, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT)
 
 if __name__ == '__main__':
     app.run(host=os.getenv('HOST'), port=os.getenv('PORT'))
