@@ -103,7 +103,6 @@
                 </tr>
             </thead>
             <tbody>
-            <tbody>
                 {% for transaction in transactions %}
                 <tr>
                     <td><span class="transaction-time" data-iso="{{ transaction.time.isoformat() }}">
@@ -115,7 +114,6 @@
                     </td>
                 </tr>
                 {% endfor %}
-            </tbody>
             </tbody>
         </table>
     </div>
@@ -129,7 +127,12 @@
             times.forEach(function (timeElement) {
                 var isoTime = timeElement.getAttribute('data-iso');
                 var localTime = new Date(isoTime);
-                timeElement.textContent = localTime.toLocaleString();
+                var timeZoneOffset = -localTime.getTimezoneOffset();
+                var offsetHours = Math.floor(Math.abs(timeZoneOffset) / 60);
+                var offsetMinutes = Math.abs(timeZoneOffset) % 60;
+                var offsetSign = timeZoneOffset >= 0 ? "+" : "-";
+                var formattedOffset = "UTC" + offsetSign + offsetHours.toString().padStart(2, '0') + ":" + offsetMinutes.toString().padStart(2, '0');
+                timeElement.textContent = localTime.toLocaleString() + " (" + formattedOffset + ")";
             });
         });
         function toggleDateInputs() {
