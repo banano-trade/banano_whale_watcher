@@ -103,16 +103,19 @@
                 </tr>
             </thead>
             <tbody>
+            <tbody>
                 {% for transaction in transactions %}
                 <tr>
-                    <td>{{ transaction.time }}</td>
+                    <td><span class="transaction-time" data-iso="{{ transaction.time.isoformat() }}">
+                            {{ transaction.time }}</span></td>
                     <td>{{ transaction.account }}</td>
                     <td>
-                        <a href="https://creeper.banano.cc/hash/{{ transaction.hash }}" target="_blank">{{
-                            transaction.amount_decimal }} BAN</a>
+                        <a href="https://creeper.banano.cc/hash/{{ transaction.hash }}" target="_blank">
+                            {{ transaction.amount_decimal }} BAN</a>
                     </td>
                 </tr>
                 {% endfor %}
+            </tbody>
             </tbody>
         </table>
     </div>
@@ -121,6 +124,14 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
     <script>
         document.getElementById('min_amount').min = {{ MINIMUM_DETECTABLE_BAN_AMOUNT }};
+        document.addEventListener('DOMContentLoaded', function () {
+            var times = document.querySelectorAll('.transaction-time');
+            times.forEach(function (timeElement) {
+                var isoTime = timeElement.getAttribute('data-iso');
+                var localTime = new Date(isoTime);
+                timeElement.textContent = localTime.toLocaleString();
+            });
+        });
         function toggleDateInputs() {
             var selectBox = document.getElementById('time_frame');
             var startDateInput = document.getElementById('start_date');
