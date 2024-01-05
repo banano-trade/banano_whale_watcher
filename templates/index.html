@@ -124,16 +124,12 @@
         document.getElementById('min_amount').min = {{ MINIMUM_DETECTABLE_BAN_AMOUNT }};
         document.addEventListener('DOMContentLoaded', function () {
             var times = document.querySelectorAll('.transaction-time');
-            times.forEach(function (timeElement) {
-                var isoTime = timeElement.getAttribute('data-iso');
-                var localTime = new Date(isoTime);
-                var timeZoneOffset = -localTime.getTimezoneOffset();
-                var offsetHours = Math.floor(Math.abs(timeZoneOffset) / 60);
-                var offsetMinutes = Math.abs(timeZoneOffset) % 60;
-                var offsetSign = timeZoneOffset >= 0 ? "+" : "-";
-                var formattedOffset = "UTC" + offsetSign + offsetHours.toString().padStart(2, '0') + ":" + offsetMinutes.toString().padStart(2, '0');
-                timeElement.textContent = localTime.toLocaleString() + " (" + formattedOffset + ")";
-            });
+            for (var i = 0; i < times.length; i++) {
+                var time = times[i];
+                var iso = time.getAttribute('data-iso');
+                var date = new Date(iso);
+                time.innerHTML = date.toLocaleString();
+            }
         });
         function toggleDateInputs() {
             var selectBox = document.getElementById('time_frame');
