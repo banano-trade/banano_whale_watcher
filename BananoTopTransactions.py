@@ -31,7 +31,7 @@ def on_message(ws, message):
         data = json.loads(message)
         if data["topic"] == "confirmation":
             transaction_data = data["message"]
-            transaction_time = datetime.fromtimestamp(int(data["time"]) / 1000)
+            transaction_time = datetime.utcfromtimestamp(int(data["time"]) / 1000)  # Convert to UTC
 
             # Check if the amount is greater than the limit
             if float(transaction_data.get("amount_decimal", 0)) > MINIMUM_DETECTABLE_BAN_AMOUNT:

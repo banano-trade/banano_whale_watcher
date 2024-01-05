@@ -126,10 +126,13 @@
             var times = document.querySelectorAll('.transaction-time');
             times.forEach(function (timeElement) {
                 var isoTime = timeElement.getAttribute('data-iso');
-                var utcTime = new Date(isoTime + 'Z'); // Append 'Z' to indicate UTC time
+                // Create a Date object assuming the ISO string is in UTC
+                var utcTime = new Date(isoTime + 'Z');
+                // Convert to local time string
                 timeElement.textContent = utcTime.toLocaleString();
             });
         });
+
         function toggleDateInputs() {
             var selectBox = document.getElementById('time_frame');
             var startDateInput = document.getElementById('start_date');
