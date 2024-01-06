@@ -43,6 +43,10 @@
             /* Custom link color */
         }
 
+        .hidden {
+            display: none;
+        }
+
         a:hover {
             color: #00b77a;
             /* Custom link hover color */
@@ -78,13 +82,13 @@
             </div>
 
             <!-- Start Date Field -->
-            <div class="form-group">
+            <div class="form-group date-input">
                 <label for="start_date">Start Date:</label>
                 <input type="date" id="start_date" name="start_date" class="form-control">
             </div>
 
             <!-- End Date Field -->
-            <div class="form-group">
+            <div class="form-group date-input">
                 <label for="end_date">End Date:</label>
                 <input type="date" id="end_date" name="end_date" class="form-control">
             </div>
@@ -135,16 +139,21 @@
 
         function toggleDateInputs() {
             var selectBox = document.getElementById('time_frame');
-            var startDateInput = document.getElementById('start_date');
-            var endDateInput = document.getElementById('end_date');
+            var startDateInput = document.getElementById('start_date').parentNode;
+            var endDateInput = document.getElementById('end_date').parentNode;
             var isCustomDate = selectBox.value === '';
 
-            startDateInput.disabled = !isCustomDate;
-            endDateInput.disabled = !isCustomDate;
-
-            // Toggle the 'required' attribute based on the selection
-            startDateInput.required = isCustomDate;
-            endDateInput.required = isCustomDate;
+            if (isCustomDate) {
+                startDateInput.classList.remove('hidden');
+                endDateInput.classList.remove('hidden');
+                startDateInput.getElementsByTagName('input')[0].required = true;
+                endDateInput.getElementsByTagName('input')[0].required = true;
+            } else {
+                startDateInput.classList.add('hidden');
+                endDateInput.classList.add('hidden');
+                startDateInput.getElementsByTagName('input')[0].required = false;
+                endDateInput.getElementsByTagName('input')[0].required = false;
+            }
         }
         toggleDateInputs(); // Run on load
     </script>
