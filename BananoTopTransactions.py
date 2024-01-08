@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
 import threading
 import websocket
@@ -9,11 +9,35 @@ from extensions import db
 import os
 from dotenv import load_dotenv
 load_dotenv()
+import requests
+from threading import Thread
+import time
+
+# Global variable to store aliases
+account_aliases = {}
+
+def fetch_aliases():
+    global account_aliases
+    while True:
+        try:
+            response = requests.post('https://api.spyglass.pw/banano/v1/known/accounts')
+            if response.status_code == 200:
+                aliases = response.json()
+                account_aliases = {item['address']: item['alias'] for item in aliases}
+        except Exception as e:
+            print(f"Error fetching aliases: {e}")
+        
+        # Wait for one day (86400 seconds) before fetching again
+        time.sleep(86400)
+# Start the alias fetching thread
+alias_thread = Thread(target=fetch_aliases)
+alias_thread.start()
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///transactions.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 MINIMUM_DETECTABLE_BAN_AMOUNT = 10000
+PER_PAGE = 20
 
 db.init_app(app)
 
@@ -33,8 +57,8 @@ def on_message(ws, message):
             transaction_data = data["message"]
             transaction_time = datetime.utcfromtimestamp(int(data["time"]) / 1000)  # Convert to UTC
 
-            # Check if the amount is greater than the limit
-            if float(transaction_data.get("amount_decimal", 0)) > MINIMUM_DETECTABLE_BAN_AMOUNT:
+            # Check if the subtype is 'send' and the amount is greater than the limit
+            if transaction_data["block"]["subtype"] == "send" and float(transaction_data.get("amount_decimal", 0)) > MINIMUM_DETECTABLE_BAN_AMOUNT:
                 transaction = Transaction(
                     account=transaction_data["account"],
                     amount_decimal=float(format(float(transaction_data["amount_decimal"]), '.2f')),
@@ -90,40 +114,68 @@ threading.Thread(target=start_websocket).start()
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    page = request.args.get('page', 1, type=int)
+    filtered = False
+    min_amount = MINIMUM_DETECTABLE_BAN_AMOUNT
+    date_range = None
+    time_frame_display = None
+
     if request.method == 'POST':
         time_frame = request.form.get('time_frame')
-        min_amount = float(request.form.get('min_amount', 0))
-        # Check if the minimum amount is less than MINIMUM_DETECTABLE_BAN_AMOUNT
+        min_amount = int(request.form.get('min_amount', 0))
+
         if min_amount < MINIMUM_DETECTABLE_BAN_AMOUNT:
             return f"Minimum amount must be at least {MINIMUM_DETECTABLE_BAN_AMOUNT}", 400
-        start_date_str = request.form.get('start_date')
-        end_date_str = request.form.get('end_date')
 
-        if start_date_str and end_date_str:
-            # Format the dates to 'yyyy-mm-dd'
-            start_time = datetime.strptime(start_date_str, '%Y-%m-%d')
-            end_time = datetime.strptime(end_date_str, '%Y-%m-%d')
-        else:
+        if time_frame:
             if time_frame == '24h':
                 start_time = datetime.now() - timedelta(days=1)
+                time_frame_display = "Last 24 Hours"
             elif time_frame == '7d':
                 start_time = datetime.now() - timedelta(days=7)
+                time_frame_display = "Last 7 Days"
             elif time_frame == '30d':
                 start_time = datetime.now() - timedelta(days=30)
-            else:
-                return "Invalid time frame", 400
+                time_frame_display = "Last 30 Days"
             end_time = datetime.now()
 
-        transactions = Transaction.query.filter(
+        elif request.form.get('start_date') and request.form.get('end_date'):
+            start_time = datetime.strptime(request.form.get('start_date'), '%Y-%m-%d')
+            end_time = datetime.strptime(request.form.get('end_date'), '%Y-%m-%d')
+            date_range = f"{start_time.strftime('%Y-%m-%d')} to {end_time.strftime('%Y-%m-%d')}"
+
+        transactions_query = Transaction.query.filter(
             Transaction.time >= start_time,
             Transaction.time <= end_time,
             Transaction.amount_decimal > min_amount
-        ).all()
-        return render_template('index.html', transactions=transactions, filtered=True, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT)
+        )
+        filtered = True
 
+    if filtered:
+        transactions_query = Transaction.query.filter(
+            Transaction.time >= start_time,
+            Transaction.time <= end_time,
+            Transaction.amount_decimal > min_amount
+        ).order_by(Transaction.time.desc())
     else:
-        latest_transactions = Transaction.query.order_by(Transaction.time.desc()).limit(50).all()
-        return render_template('index.html', transactions=latest_transactions, filtered=False, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT)
+        transactions_query = Transaction.query.order_by(Transaction.time.desc())
+
+    # Pagination
+    transactions_paginated = transactions_query.paginate(page=page, per_page=PER_PAGE, error_out=False)
+    next_url = url_for('index', page=transactions_paginated.next_num) if transactions_paginated.has_next else None
+    prev_url = url_for('index', page=transactions_paginated.prev_num) if transactions_paginated.has_prev else None
+
+    transactions_with_alias = []
+    for transaction in transactions_paginated.items:
+        alias = account_aliases.get(transaction.account, transaction.account)
+        transactions_with_alias.append({
+            'time': transaction.time.isoformat(),
+            'account': alias,
+            'amount_decimal': transaction.amount_decimal,
+            'hash': transaction.hash
+        })
+
+    return render_template('index.html', transactions=transactions_with_alias, filtered=filtered, min_amount=min_amount, date_range=date_range, time_frame_display=time_frame_display, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT, next_url=next_url, prev_url=prev_url)
 
 if __name__ == '__main__':
     app.run(host=os.getenv('HOST'), port=os.getenv('PORT'))

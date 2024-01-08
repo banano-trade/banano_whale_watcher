@@ -58,12 +58,64 @@
             border-color: #007bff;
             /* Primary button border color */
         }
+
+        .navbar-brand {
+            font-size: 30px;
+            font-weight: bold;
+            color: #01d28e;
+            text-decoration: none;
+        }
+
+        .navbar-brand:hover {
+            color: #00b77a;
+        }
+
+        /* Additional styles for mobile responsiveness */
+        @media (max-width: 768px) {
+            .navbar-brand {
+                font-size: 20px;
+                /* Adjust font size for smaller screens */
+            }
+
+            .btn {
+                font-size: 14px;
+                /* Adjust button font size for smaller screens */
+            }
+
+            .form-control,
+            .btn-primary {
+                font-size: 14px;
+                /* Adjust form and button sizes */
+            }
+
+            .table {
+                font-size: 12px;
+                /* Adjust table font size */
+            }
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h1 class="mt-4 mb-3">Banano Transaction Filter</h1>
+        <!-- Navbar -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+            <a class="navbar-brand" href="/">Banano Whale Watcher 🐋</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggler"
+                aria-controls="navbarToggler" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarToggler">
+                <ul class="navbar-nav ml-auto mt-2 mt-lg-0">
+                    <li class="nav-item">
+                        <a href="https://banano.trade" class="btn"
+                            style="background-color: #FBDD11; font-family: 'Libre Baskerville', serif; color: #4CBF4A; font-size: 20px;" target="_blank">
+                            provided by <strong>banano.trade</strong>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
 
         <!-- Transaction Filter Form -->
         <form action="/" method="post" class="mb-4">
@@ -78,7 +130,8 @@
             </div>
             <div class="form-group">
                 <label for="min_amount">Minimum Amount:</label>
-                <input type="number" id="min_amount" name="min_amount" min="10000" class="form-control" required>
+                <input type="number" id="min_amount" name="min_amount" min="10000" value="{{ min_amount }}" required
+                    class="form-control">
             </div>
 
             <!-- Start Date Field -->
@@ -97,7 +150,15 @@
         </form>
 
         <!-- Latest Transactions Table -->
-        <h2>{{ 'Filtered Transactions' if filtered else 'Latest Transactions with >10000 BAN' }}</h2>
+        {% if filtered %}
+        {% if date_range %}
+        <h2>Latest Transactions with &gt;{{ min_amount }} BAN within {{ date_range }}</h2>
+        {% else %}
+        <h2>Latest Transactions with &gt;{{ min_amount }} BAN within the {{ time_frame_display }}</h2>
+        {% endif %}
+        {% else %}
+        <h2>Latest Transactions with &gt;{{ MINIMUM_DETECTABLE_BAN_AMOUNT }} BAN</h2>
+        {% endif %}
         <table class="table table-bordered">
             <thead>
                 <tr>
@@ -109,17 +170,32 @@
             <tbody>
                 {% for transaction in transactions %}
                 <tr>
-                    <td><span class="transaction-time" data-iso="{{ transaction.time.isoformat() }}">
-                            {{ transaction.time }}</span></td>
+                    <td><span class="transaction-time" data-iso="{{ transaction.time }}">{{ transaction.time }}</span>
+                    </td>
                     <td>{{ transaction.account }}</td>
                     <td>
-                        <a href="https://creeper.banano.cc/hash/{{ transaction.hash }}" target="_blank">
-                            {{ transaction.amount_decimal }} BAN</a>
+                        <a href="https://creeper.banano.cc/hash/{{ transaction.hash }}" target="_blank">{{
+                            transaction.amount_decimal }} BAN</a>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        <!-- Pagination Controls -->
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center">
+                {% if prev_url %}
+                <li class="page-item"><a class="page-link" href="{{ prev_url }}">Previous</a></li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">Previous</span></li>
+                {% endif %}
+                {% if next_url %}
+                <li class="page-item"><a class="page-link" href="{{ next_url }}">Next</a></li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">Next</span></li>
+                {% endif %}
+            </ul>
+        </nav>
     </div>
     <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
