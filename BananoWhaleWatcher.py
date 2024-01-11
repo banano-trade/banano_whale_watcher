@@ -4,7 +4,7 @@ import threading
 import websocket
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from extensions import db
 import os
 from dotenv import load_dotenv
@@ -15,6 +15,11 @@ import time
 
 # Global variable to store aliases
 account_aliases = {}
+
+def trim_account(account):
+    if account and len(account) > 16:
+        return f"{account[:10]}...{account[-6:]}"
+    return account
 
 def fetch_aliases():
     global account_aliases
@@ -55,12 +60,16 @@ def on_message(ws, message):
         data = json.loads(message)
         if data["topic"] == "confirmation":
             transaction_data = data["message"]
-            transaction_time = datetime.utcfromtimestamp(int(data["time"]) / 1000)  # Convert to UTC
+            transaction_time = datetime.fromtimestamp(int(data["time"]) / 1000, timezone.utc)
 
             # Check if the subtype is 'send' and the amount is greater than the limit
             if transaction_data["block"]["subtype"] == "send" and float(transaction_data.get("amount_decimal", 0)) > MINIMUM_DETECTABLE_BAN_AMOUNT:
+                sender = transaction_data["account"]
+                receiver = transaction_data["block"].get("link_as_account")
+
                 transaction = Transaction(
-                    account=transaction_data["account"],
+                    sender=sender,
+                    receiver=receiver,
                     amount_decimal=float(format(float(transaction_data["amount_decimal"]), '.2f')),
                     time=transaction_time,
                     hash=transaction_data["hash"]
@@ -167,15 +176,17 @@ def index():
 
     transactions_with_alias = []
     for transaction in transactions_paginated.items:
-        alias = account_aliases.get(transaction.account, transaction.account)
+        sender_alias = account_aliases.get(transaction.sender, transaction.sender)
+        receiver_alias = account_aliases.get(transaction.receiver, transaction.receiver)
         transactions_with_alias.append({
             'time': transaction.time.isoformat(),
-            'account': alias,
+            'sender': sender_alias,
+            'receiver': receiver_alias,
             'amount_decimal': transaction.amount_decimal,
             'hash': transaction.hash
         })
 
-    return render_template('index.html', transactions=transactions_with_alias, filtered=filtered, min_amount=min_amount, date_range=date_range, time_frame_display=time_frame_display, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT, next_url=next_url, prev_url=prev_url)
+    return render_template('index.html', transactions=transactions_with_alias, filtered=filtered, min_amount=min_amount, date_range=date_range, time_frame_display=time_frame_display, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT, next_url=next_url, prev_url=prev_url, trim_account=trim_account)
 
 if __name__ == '__main__':
     app.run(host=os.getenv('HOST'), port=os.getenv('PORT'))

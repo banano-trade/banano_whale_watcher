@@ -109,7 +109,8 @@
                 <ul class="navbar-nav ml-auto mt-2 mt-lg-0">
                     <li class="nav-item">
                         <a href="https://banano.trade" class="btn"
-                            style="background-color: #FBDD11; font-family: 'Libre Baskerville', serif; color: #4CBF4A; font-size: 20px;" target="_blank">
+                            style="background-color: #FBDD11; font-family: 'Libre Baskerville', serif; color: #4CBF4A; font-size: 20px;"
+                            target="_blank">
                             provided by <strong>banano.trade</strong>
                         </a>
                     </li>
@@ -163,7 +164,8 @@
             <thead>
                 <tr>
                     <th>Time</th>
-                    <th>Account</th>
+                    <th>Sender</th>
+                    <th>Receiver</th>
                     <th>Amount</th>
                 </tr>
             </thead>
@@ -172,7 +174,8 @@
                 <tr>
                     <td><span class="transaction-time" data-iso="{{ transaction.time }}">{{ transaction.time }}</span>
                     </td>
-                    <td>{{ transaction.account }}</td>
+                    <td>{{ trim_account(transaction.sender) }}</td>
+                    <td>{{ trim_account(transaction.receiver) }}</td>
                     <td>
                         <a href="https://creeper.banano.cc/hash/{{ transaction.hash }}" target="_blank">{{
                             transaction.amount_decimal }} BAN</a>
