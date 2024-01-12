@@ -17,13 +17,7 @@ import time
 account_aliases = {}
 
 def trim_account(account):
-    # Check if there's an alias for the account
-    alias = account_aliases.get(account)
-    if alias:
-        return alias  # Return the alias unmodified
-
-    # If no alias, trim the account string
-    if account and len(account) > 16:
+    if account and len(account) > 30:
         return f"{account[:10]}...{account[-6:]}"
     return account
 
