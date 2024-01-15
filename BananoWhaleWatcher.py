@@ -30,7 +30,7 @@ def fetch_aliases():
                 aliases = response.json()
                 account_aliases = {item['address']: item['alias'] for item in aliases}
         except Exception as e:
-            print(f"Error fetching aliases: {e}")
+            logging.error(f"Failed to fetch aliases: {e}")
         
         # Wait for one day (86400 seconds) before fetching again
         time.sleep(86400)
@@ -56,6 +56,24 @@ def create_tables():
 with app.app_context():
     create_tables()  # Create tables before starting the application
 
+# Global variable for the message timer
+message_timer = None
+MESSAGE_TIMEOUT = 60  # 60 seconds
+
+def reset_message_timer():
+    global message_timer
+    if message_timer is not None:
+        message_timer.cancel()
+    message_timer = threading.Timer(MESSAGE_TIMEOUT, reconnect_websocket)
+    message_timer.start()
+
+def reconnect_websocket():
+    global ws
+    if ws is not None:
+        ws.close()
+    logging.info("Attempting to reconnect due to inactivity...")
+    start_websocket()
+
 def on_message(ws, message):
     with app.app_context():
         data = json.loads(message)
@@ -79,13 +97,7 @@ def on_message(ws, message):
                 db.session.commit()
 
 def on_error(ws, error):
-    print(error)
-
-def on_close(ws, close_status_code, close_msg):
-    print("### closed ###")
-    # Reconnect after 5 seconds
-    time.sleep(5)
-    start_websocket()
+    logging.error(f"WebSocket error: {error}")
 
 def on_open(ws):
     subscribe_message = {
@@ -98,6 +110,7 @@ def on_open(ws):
 MAX_RETRIES = 10  # Maximum number of retries
 INITIAL_RETRY_DELAY = 1  # Initial delay in seconds before the first retry
 def start_websocket():
+    global ws, message_timer
     urls = ["ws.banano.trade", "ws2.banano.trade"]
     current_url_index = 0
     retry_count = 0
@@ -112,6 +125,7 @@ def start_websocket():
                                         on_error=on_error,
                                         on_close=on_close)
 
+            reset_message_timer()  # Start the timer when the WebSocket connection is established
             ws.run_forever()
             retry_count = 0  # Reset retry count after a successful connection
             retry_delay = INITIAL_RETRY_DELAY  # Reset retry delay
@@ -126,8 +140,18 @@ def start_websocket():
         # Alternate between the two URLs
         current_url_index = (current_url_index + 1) % len(urls)
 
+    if message_timer is not None:
+        message_timer.cancel()  # Cancel the timer if max retries are reached
     logging.error("Max retries reached. WebSocket client stopped.")
 
+# Modify your existing on_close function to reset the timer
+def on_close(ws, close_status_code, close_msg):
+    global message_timer
+    if message_timer is not None:
+        message_timer.cancel()  # Cancel the timer when the WebSocket is closed
+    # Reconnect after 5 seconds
+    time.sleep(5)
+    start_websocket()
 # Start WebSocket in a separate thread
 threading.Thread(target=start_websocket).start()
 
