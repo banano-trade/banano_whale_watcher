@@ -48,6 +48,7 @@ db.init_app(app)
 
 # Import models after initializing db with app
 from models import Transaction
+import logging
 
 def create_tables():
     db.create_all()
@@ -94,29 +95,38 @@ def on_open(ws):
     }
     ws.send(json.dumps(subscribe_message))
 
+MAX_RETRIES = 10  # Maximum number of retries
+INITIAL_RETRY_DELAY = 1  # Initial delay in seconds before the first retry
 def start_websocket():
-    current_url = "ws.banano.trade"
-    alternate = True  # Flag to alternate between URLs
+    urls = ["ws.banano.trade", "ws2.banano.trade"]
+    current_url_index = 0
+    retry_count = 0
+    retry_delay = INITIAL_RETRY_DELAY
 
-    while True:
-        websocket_url = f"wss://{current_url}"
-        ws = websocket.WebSocketApp(websocket_url,
-            on_open=on_open,
-            on_message=on_message,
-            on_error=on_error,
-            on_close=on_close)
+    while retry_count < MAX_RETRIES:
+        try:
+            websocket_url = f"wss://{urls[current_url_index]}"
+            ws = websocket.WebSocketApp(websocket_url,
+                                        on_open=on_open,
+                                        on_message=on_message,
+                                        on_error=on_error,
+                                        on_close=on_close)
 
-        ws.run_forever()
+            ws.run_forever()
+            retry_count = 0  # Reset retry count after a successful connection
+            retry_delay = INITIAL_RETRY_DELAY  # Reset retry delay
 
-        # Wait for 5 seconds before retrying
-        time.sleep(5)
+        except Exception as e:
+            logging.error(f"WebSocket connection failed: {e}")
+            time.sleep(retry_delay)
+            retry_delay *= 2  # Exponential backoff
+            retry_count += 1
+            logging.info(f"Retrying connection... Attempt {retry_count} to {websocket_url}")
 
         # Alternate between the two URLs
-        if alternate:
-            current_url = "ws2.banano.trade"
-        else:
-            current_url = "ws.banano.trade"
-        alternate = not alternate
+        current_url_index = (current_url_index + 1) % len(urls)
+
+    logging.error("Max retries reached. WebSocket client stopped.")
 
 # Start WebSocket in a separate thread
 threading.Thread(target=start_websocket).start()
