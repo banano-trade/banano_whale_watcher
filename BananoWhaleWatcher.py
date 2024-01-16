@@ -159,54 +159,53 @@ threading.Thread(target=start_websocket).start()
 def index():
     page = request.args.get('page', 1, type=int)
     filtered = False
-    min_amount = MINIMUM_DETECTABLE_BAN_AMOUNT
     date_range = None
     time_frame_display = None
 
+    # Initialize time_frame and min_amount with default values
+    time_frame = request.args.get('time_frame', '')
+    min_amount = int(request.form.get('min_amount', MINIMUM_DETECTABLE_BAN_AMOUNT))
+
+    # Initialize start_time and end_time with default or current values
+    start_time = datetime.now() - timedelta(days=30)  # Default to the last 30 days, for example
+    end_time = datetime.now()
+
     if request.method == 'POST':
-        time_frame = request.form.get('time_frame')
-        min_amount = int(request.form.get('min_amount', 0))
+        # Update min_amount from the form data if it's a POST request
+        min_amount = int(request.form.get('min_amount', MINIMUM_DETECTABLE_BAN_AMOUNT))
 
         if min_amount < MINIMUM_DETECTABLE_BAN_AMOUNT:
             return f"Minimum amount must be at least {MINIMUM_DETECTABLE_BAN_AMOUNT}", 400
 
-        if time_frame:
-            if time_frame == '24h':
-                start_time = datetime.now() - timedelta(days=1)
-                time_frame_display = "Last 24 Hours"
-            elif time_frame == '7d':
-                start_time = datetime.now() - timedelta(days=7)
-                time_frame_display = "Last 7 Days"
-            elif time_frame == '30d':
-                start_time = datetime.now() - timedelta(days=30)
-                time_frame_display = "Last 30 Days"
-            end_time = datetime.now()
+        # Update time_frame based on form input
+        time_frame = request.form.get('time_frame', '')
 
-        elif request.form.get('start_date') and request.form.get('end_date'):
-            start_time = datetime.strptime(request.form.get('start_date'), '%Y-%m-%d')
-            end_time = datetime.strptime(request.form.get('end_date'), '%Y-%m-%d')
+        if time_frame == '24h':
+            start_time = datetime.now() - timedelta(days=1)
+            time_frame_display = "Last 24 Hours"
+        elif time_frame == '7d':
+            start_time = datetime.now() - timedelta(days=7)
+            time_frame_display = "Last 7 Days"
+        elif time_frame == '30d':
+            start_time = datetime.now() - timedelta(days=30)
+            time_frame_display = "Last 30 Days"
+        else:
+            start_time = datetime.strptime(request.form.get('start_date', ''), '%Y-%m-%d') if request.form.get('start_date') else start_time
+            end_time = datetime.strptime(request.form.get('end_date', ''), '%Y-%m-%d') if request.form.get('end_date') else end_time
             date_range = f"{start_time.strftime('%Y-%m-%d')} to {end_time.strftime('%Y-%m-%d')}"
 
-        transactions_query = Transaction.query.filter(
-            Transaction.time >= start_time,
-            Transaction.time <= end_time,
-            Transaction.amount_decimal > min_amount
-        )
         filtered = True
 
-    if filtered:
-        transactions_query = Transaction.query.filter(
-            Transaction.time >= start_time,
-            Transaction.time <= end_time,
-            Transaction.amount_decimal > min_amount
-        ).order_by(Transaction.time.desc())
-    else:
-        transactions_query = Transaction.query.order_by(Transaction.time.desc())
+    # Filtering and pagination logic
+    transactions_query = Transaction.query.filter(
+        Transaction.time >= start_time,
+        Transaction.time <= end_time,
+        Transaction.amount_decimal > min_amount
+    ).order_by(Transaction.time.desc())
 
-    # Pagination
     transactions_paginated = transactions_query.paginate(page=page, per_page=PER_PAGE, error_out=False)
-    next_url = url_for('index', page=transactions_paginated.next_num) if transactions_paginated.has_next else None
-    prev_url = url_for('index', page=transactions_paginated.prev_num) if transactions_paginated.has_prev else None
+    next_url = url_for('index', page=transactions_paginated.next_num, time_frame=time_frame, min_amount=min_amount) if transactions_paginated.has_next else None
+    prev_url = url_for('index', page=transactions_paginated.prev_num, time_frame=time_frame, min_amount=min_amount) if transactions_paginated.has_prev else None
 
     transactions_with_alias = []
     for transaction in transactions_paginated.items:
