@@ -15,6 +15,7 @@ import time
 
 # Global variable to store aliases
 account_aliases = {}
+websocket_connected = False
 
 def trim_account(account):
     if account and len(account) > 30:
@@ -76,8 +77,10 @@ def reconnect_websocket():
 
 def on_message(ws, message):
     with app.app_context():
+        global last_message_time
         data = json.loads(message)
-        if data["topic"] == "confirmation":
+        if data.get("topic") == "confirmation":
+            last_message_time = datetime.utcnow()
             transaction_data = data["message"]
             transaction_time = datetime.fromtimestamp(int(data["time"]) / 1000, timezone.utc)
 
@@ -100,6 +103,8 @@ def on_error(ws, error):
     logging.error(f"WebSocket error: {error}")
 
 def on_open(ws):
+    global websocket_connected
+    websocket_connected = True
     subscribe_message = {
         "action": "subscribe",
         "topic": "confirmation",
@@ -146,6 +151,8 @@ def start_websocket():
 
 # Modify your existing on_close function to reset the timer
 def on_close(ws, close_status_code, close_msg):
+    global websocket_connected
+    websocket_connected = False
     global message_timer
     if message_timer is not None:
         message_timer.cancel()  # Cancel the timer when the WebSocket is closed
@@ -154,6 +161,16 @@ def on_close(ws, close_status_code, close_msg):
     start_websocket()
 # Start WebSocket in a separate thread
 threading.Thread(target=start_websocket).start()
+
+@app.route('/websocket-status')
+def websocket_status():
+    global last_message_time, websocket_connected
+    if websocket_connected and last_message_time:
+        last_message_str = last_message_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+        last_message_ago = int((datetime.utcnow() - last_message_time).total_seconds())
+    else:
+        last_message_str = "No message received"
+    return {'status': websocket_connected, 'last_message': last_message_str, 'last_message_ago': last_message_ago}
 
 @app.route('/', methods=['GET'])
 def index():

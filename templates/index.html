@@ -106,6 +106,13 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarToggler">
+                <ul class="navbar-nav mr-auto mt-2 mt-lg-0">
+                    <!-- WebSocket Status Indicator -->
+                    <li class="nav-item">
+                        <span id="websocket-status-indicator"
+                            style="color: red; margin-right: 10px;"></span>
+                    </li>
+                </ul>
                 <ul class="navbar-nav ml-auto mt-2 mt-lg-0">
                     <li class="nav-item">
                         <a href="https://banano.trade" class="btn"
@@ -123,15 +130,16 @@
             <div class="form-group">
                 <label for="time_frame">Select Time Frame:</label>
                 <select name="time_frame" id="time_frame" class="form-control" onchange="toggleDateInputs()">
-                    <option value="" {{ "selected" if time_frame == '' else '' }}>Custom Date Range</option>
-                    <option value="24h" {{ "selected" if time_frame == '24h' else '' }}>Last 24 Hours</option>
-                    <option value="7d" {{ "selected" if time_frame == '7d' else '' }}>Last 7 Days</option>
-                    <option value="30d" {{ "selected" if time_frame == '30d' else '' }}>Last 30 Days</option>
+                    <option value="" {{ "selected" if time_frame=='' else '' }}>Custom Date Range</option>
+                    <option value="24h" {{ "selected" if time_frame=='24h' else '' }}>Last 24 Hours</option>
+                    <option value="7d" {{ "selected" if time_frame=='7d' else '' }}>Last 7 Days</option>
+                    <option value="30d" {{ "selected" if time_frame=='30d' else '' }}>Last 30 Days</option>
                 </select>
             </div>
             <div class="form-group">
                 <label for="min_amount">Minimum Amount:</label>
-                <input type="number" id="min_amount" name="min_amount" min="10000" value="{{ min_amount if min_amount else '' }}" required class="form-control">
+                <input type="number" id="min_amount" name="min_amount" min="10000"
+                    value="{{ min_amount if min_amount else '' }}" required class="form-control">
             </div>
 
             <!-- Start Date Field -->
@@ -234,6 +242,31 @@
             }
         }
         toggleDateInputs(); // Run on load
+
+        function checkWebSocketStatus() {
+            fetch('/websocket-status')
+                .then(response => response.json())
+                .then(data => {
+                    const indicator = document.getElementById('websocket-status-indicator');
+                    if (data.status) {
+                        indicator.style.color = '#28a745';
+                        indicator.innerHTML = 'Connected to Banano network.<br>Last block received ' + data.last_message_ago + ' seconds ago';
+                    } else {
+                        indicator.style.color = 'red';
+                        indicator.textContent = 'Disconnected';
+                    }
+                })
+                .catch(error => {
+                    const indicator = document.getElementById('websocket-status-indicator');
+                    indicator.style.color = 'grey';
+                    indicator.textContent = 'Error checking the Banano network status';
+                });
+        }
+        // Check the WebSocket status every minute
+        setInterval(checkWebSocketStatus, 60000);
+
+        // Check the status immediately when the page loads
+        checkWebSocketStatus();
     </script>
 </body>
 
