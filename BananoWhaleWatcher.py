@@ -165,12 +165,17 @@ threading.Thread(target=start_websocket).start()
 @app.route('/websocket-status')
 def websocket_status():
     global last_message_time, websocket_connected
-    if websocket_connected and last_message_time:
-        last_message_str = last_message_time.strftime("%Y-%m-%d %H:%M:%S UTC")
-        last_message_ago = int((datetime.utcnow() - last_message_time).total_seconds())
-    else:
-        last_message_str = "No message received"
-    return {'status': websocket_connected, 'last_message': last_message_str, 'last_message_ago': last_message_ago}
+    try:
+        if websocket_connected and last_message_time:
+            last_message_str = last_message_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+            last_message_ago = int((datetime.utcnow() - last_message_time).total_seconds())
+            if last_message_ago > 600:
+                return {'status': False, 'last_message': "Last message is more than 10 minutes ago", "last_message_ago": last_message_ago}
+        else:
+            last_message_str = "No message received"
+        return {'status': websocket_connected, 'last_message': last_message_str, 'last_message_ago': last_message_ago}
+    except:
+        return {'status': False, 'last_message': "No message received"}
 
 @app.route('/', methods=['GET'])
 def index():

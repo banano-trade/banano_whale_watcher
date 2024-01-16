@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
     <style>
         body {
-            background-color: #343a40;
+            background-color: #2d891c;
             /* Dark background */
             color: #ffffff;
             /* Light text color */
@@ -38,17 +38,12 @@
             /* Darker border for form fields */
         }
 
-        a {
-            color: #01d28e;
-            /* Custom link color */
-        }
-
         .hidden {
             display: none;
         }
 
         a:hover {
-            color: #00b77a;
+            color: #000;
             /* Custom link hover color */
         }
 
@@ -62,12 +57,92 @@
         .navbar-brand {
             font-size: 30px;
             font-weight: bold;
-            color: #01d28e;
             text-decoration: none;
         }
 
         .navbar-brand:hover {
             color: #00b77a;
+        }
+
+        /* Normal mode link color */
+        .banano-link {
+            color: #FBDD11;
+        }
+
+        /* Dark mode link color */
+        .dark-mode .banano-link {
+            color: #4CBF4A;
+        }
+
+        /* Dark mode styles */
+        .dark-mode {
+            background-color: #1a1a1a;
+            /* Darker background */
+            color: #f8f9fa;
+            /* Lighter text */
+        }
+
+        /* Style for WebSocket Status Indicator */
+        .websocket-status {
+            color: #FBDD11;
+            /* Default color */
+        }
+
+        /* Dark mode styles */
+        .dark-mode .websocket-status {
+            color: #f8f9fa;
+            /* Lighter color for dark mode */
+        }
+
+        /* Override Bootstrap navbar styles in dark mode */
+        .dark-mode .navbar.bg-dark {
+            background-color: #333 !important;
+            /* Darker navbar */
+        }
+
+        .dark-mode .navbar-brand,
+        .dark-mode .navbar-nav .nav-link {
+            color: #f8f9fa !important;
+            /* Lighter navbar text */
+        }
+
+        /* Ensure hover effect on the navbar brand in dark mode */
+        .dark-mode .navbar-brand:hover {
+            color: #00b77a !important;
+        }
+
+        .dark-mode .form-control {
+            background-color: #495057;
+            /* Darker form fields */
+            color: #f8f9fa;
+            /* Lighter text for form fields */
+        }
+
+        .banano-btn {
+            background-color: #FBDD11;
+            font-family: 'Libre Baskerville', serif;
+            color: #4CBF4A;
+            font-size: 20px;
+        }
+
+        .banano-btn:hover {
+            background-color: #e6c60d;
+            /* Slightly darker yellow */
+            color: #3da35d;
+            /* Slightly darker green */
+        }
+
+        .filter-btn {
+            background-color: #FBDD11;
+            font-family: 'Libre Baskerville', serif;
+            color: #000;
+        }
+
+        .filter-btn:hover {
+            background-color: #e6c60d;
+            /* Slightly darker yellow */
+            color: #333;
+            /* Slightly darker text color */
         }
 
         /* Additional styles for mobile responsiveness */
@@ -93,13 +168,76 @@
                 /* Adjust table font size */
             }
         }
+
+        /* Color Scheme Toggle Switch */
+        #color-mode-switch {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        #color-mode-switch>span {
+            font-size: 30px;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        #color-mode-switch svg {
+            width: 24px;
+            height: 24px;
+            margin: 0 4px;
+        }
+
+        #color-mode-switch input[type=checkbox] {
+            height: 0;
+            width: 0;
+            visibility: hidden;
+        }
+
+        #color-mode-switch label {
+            cursor: pointer;
+            text-indent: -9999px;
+            width: 42px;
+            height: 21px;
+            border-radius: 30px;
+            background: #343a40;
+            display: block;
+            position: relative;
+            margin: 0;
+        }
+
+        #color-mode-switch label:after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 15px;
+            height: 15px;
+            background: #fff;
+            border-radius: 90px;
+            transition: 0.3s;
+        }
+
+        #color-mode-switch input:checked+label:after {
+            left: calc(100% - 3px);
+            transform: translateX(-100%);
+        }
+
+        #color-mode-switch label:active:after {
+            width: 30px;
+        }
     </style>
 </head>
 
 <body>
+    <script>
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add("dark-mode");
+        }
+    </script>
     <div class="container">
         <!-- Navbar -->
-        <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <nav class="navbar navbar-expand-lg navbar-dark mb-4">
             <a class="navbar-brand" href="/">Banano Whale Watcher 🐋</a>
             <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggler"
                 aria-controls="navbarToggler" aria-expanded="false" aria-label="Toggle navigation">
@@ -109,16 +247,30 @@
                 <ul class="navbar-nav mr-auto mt-2 mt-lg-0">
                     <!-- WebSocket Status Indicator -->
                     <li class="nav-item">
-                        <span id="websocket-status-indicator"
-                            style="color: red; margin-right: 10px;"></span>
+                        <span id="websocket-status-indicator" class="websocket-status"
+                            style="margin-right: 10px;"></span>
                     </li>
                 </ul>
                 <ul class="navbar-nav ml-auto mt-2 mt-lg-0">
+                    <li class="nav-item" id="color-mode-switch">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z">
+                            </path>
+                        </svg>
+                        <input type="checkbox" id="dark-mode-switch">
+                        <label for="dark-mode-switch">Dark Mode Toggle</label>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z">
+                            </path>
+                        </svg>
+                    </li>
                     <li class="nav-item">
-                        <a href="https://banano.trade" class="btn"
-                            style="background-color: #FBDD11; font-family: 'Libre Baskerville', serif; color: #4CBF4A; font-size: 20px;"
-                            target="_blank">
-                            provided by <strong>banano.trade</strong>
+                        <a href="https://banano.trade" class="btn banano-btn font-weight-bold"
+                            target="_blank">banano.trade
                         </a>
                     </li>
                 </ul>
@@ -154,7 +306,7 @@
                 <input type="date" id="end_date" name="end_date" class="form-control">
             </div>
 
-            <button type="submit" class="btn btn-primary">Filter Transactions</button>
+            <button type="submit" class="btn filter-btn">Filter Transactions</button>
         </form>
 
         <!-- Latest Transactions Table -->
@@ -184,8 +336,10 @@
                     <td>{{ trim_account(transaction.sender) }}</td>
                     <td>{{ trim_account(transaction.receiver) }}</td>
                     <td>
-                        <a href="https://creeper.banano.cc/hash/{{ transaction.hash }}" target="_blank">{{
-                            transaction.amount_decimal }} BAN</a>
+                        <a href="https://creeper.banano.cc/hash/{{ transaction.hash }}"
+                            class="banano-link font-weight-bold" target="_blank">
+                            {{ transaction.amount_decimal }} BAN
+                        </a>
                     </td>
                 </tr>
                 {% endfor %}
@@ -213,6 +367,12 @@
     <script>
         document.getElementById('min_amount').min = {{ MINIMUM_DETECTABLE_BAN_AMOUNT }};
         document.addEventListener('DOMContentLoaded', function () {
+            const darkModeSwitch = document.getElementById('dark-mode-switch');
+            if (localStorage.getItem('darkMode') === 'true') {
+                document.body.classList.add("dark-mode");
+                darkModeSwitch.checked = true;
+            }
+            darkModeSwitch.addEventListener('change', toggleDarkMode);
             var times = document.querySelectorAll('.transaction-time');
             times.forEach(function (timeElement) {
                 var isoTime = timeElement.getAttribute('data-iso');
@@ -242,23 +402,19 @@
             }
         }
         toggleDateInputs(); // Run on load
-
         function checkWebSocketStatus() {
             fetch('/websocket-status')
                 .then(response => response.json())
                 .then(data => {
                     const indicator = document.getElementById('websocket-status-indicator');
                     if (data.status) {
-                        indicator.style.color = '#28a745';
-                        indicator.innerHTML = 'Connected to Banano network.<br>Last block received ' + data.last_message_ago + ' seconds ago';
+                        indicator.innerHTML = 'Connected to the Banano network ✔️<br>Last block received ' + data.last_message_ago + ' seconds ago';
                     } else {
-                        indicator.style.color = 'red';
                         indicator.textContent = 'Disconnected';
                     }
                 })
                 .catch(error => {
                     const indicator = document.getElementById('websocket-status-indicator');
-                    indicator.style.color = 'grey';
                     indicator.textContent = 'Error checking the Banano network status';
                 });
         }
@@ -267,6 +423,16 @@
 
         // Check the status immediately when the page loads
         checkWebSocketStatus();
+
+        // Toggle Dark Mode function
+        function toggleDarkMode() {
+            const body = document.body;
+            body.classList.toggle("dark-mode");
+
+            // Save preference to localStorage
+            localStorage.setItem('darkMode', body.classList.contains("dark-mode"));
+        }
+
     </script>
 </body>
 
