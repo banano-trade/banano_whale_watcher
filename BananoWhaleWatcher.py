@@ -155,46 +155,44 @@ def on_close(ws, close_status_code, close_msg):
 # Start WebSocket in a separate thread
 threading.Thread(target=start_websocket).start()
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/', methods=['GET'])
 def index():
     page = request.args.get('page', 1, type=int)
     filtered = False
     date_range = None
     time_frame_display = None
 
-    # Initialize time_frame and min_amount with default values
-    time_frame = request.args.get('time_frame', '')
-    min_amount = int(request.form.get('min_amount', MINIMUM_DETECTABLE_BAN_AMOUNT))
+    # Default values for filters
+    min_amount = request.args.get('min_amount', default=MINIMUM_DETECTABLE_BAN_AMOUNT, type=int)
+    time_frame = request.args.get('time_frame', default='30d')
 
-    # Initialize start_time and end_time with default or current values
-    start_time = datetime.now() - timedelta(days=30)  # Default to the last 30 days, for example
+    # Calculate the start and end time based on the time frame
     end_time = datetime.now()
-
-    if request.method == 'POST':
-        # Update min_amount from the form data if it's a POST request
-        min_amount = int(request.form.get('min_amount', MINIMUM_DETECTABLE_BAN_AMOUNT))
-
-        if min_amount < MINIMUM_DETECTABLE_BAN_AMOUNT:
-            return f"Minimum amount must be at least {MINIMUM_DETECTABLE_BAN_AMOUNT}", 400
-
-        # Update time_frame based on form input
-        time_frame = request.form.get('time_frame', '')
-
-        if time_frame == '24h':
-            start_time = datetime.now() - timedelta(days=1)
-            time_frame_display = "Last 24 Hours"
-        elif time_frame == '7d':
-            start_time = datetime.now() - timedelta(days=7)
-            time_frame_display = "Last 7 Days"
-        elif time_frame == '30d':
-            start_time = datetime.now() - timedelta(days=30)
-            time_frame_display = "Last 30 Days"
-        else:
-            start_time = datetime.strptime(request.form.get('start_date', ''), '%Y-%m-%d') if request.form.get('start_date') else start_time
-            end_time = datetime.strptime(request.form.get('end_date', ''), '%Y-%m-%d') if request.form.get('end_date') else end_time
+    if time_frame == '24h':
+        start_time = end_time - timedelta(days=1)
+        date_range = "Last 24 Hours"
+    elif time_frame == '7d':
+        start_time = end_time - timedelta(days=7)
+        date_range = "Last 7 Days"
+    elif time_frame == '30d':
+        start_time = end_time - timedelta(days=30)
+        date_range = "Last 30 Days"
+    else:
+        # Custom date range
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        if start_date_str and end_date_str:
+            start_time = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_time = datetime.strptime(end_date_str, '%Y-%m-%d')
             date_range = f"{start_time.strftime('%Y-%m-%d')} to {end_time.strftime('%Y-%m-%d')}"
+            time_frame_display = "Custom Date Range"
+        else:
+            # Default to the last 30 days if no custom date range is provided
+            start_time = end_time - timedelta(days=30)
+            time_frame = '30d'
+            time_frame_display = "Last 30 Days"
 
-        filtered = True
+    filtered = True
 
     # Filtering and pagination logic
     transactions_query = Transaction.query.filter(
@@ -202,10 +200,26 @@ def index():
         Transaction.time <= end_time,
         Transaction.amount_decimal > min_amount
     ).order_by(Transaction.time.desc())
-
+    # Pagination URL Generation with Custom Date Range Support
+    url_kwargs = {
+        'min_amount': min_amount,
+        'time_frame': time_frame,
+        'start_date': request.args.get('start_date'),
+        'end_date': request.args.get('end_date')
+    }
     transactions_paginated = transactions_query.paginate(page=page, per_page=PER_PAGE, error_out=False)
-    next_url = url_for('index', page=transactions_paginated.next_num, time_frame=time_frame, min_amount=min_amount) if transactions_paginated.has_next else None
-    prev_url = url_for('index', page=transactions_paginated.prev_num, time_frame=time_frame, min_amount=min_amount) if transactions_paginated.has_prev else None
+
+    if transactions_paginated.has_next:
+        url_kwargs['page'] = transactions_paginated.next_num
+        next_url = url_for('index', **url_kwargs)
+    else:
+        next_url = None
+
+    if transactions_paginated.has_prev:
+        url_kwargs['page'] = transactions_paginated.prev_num
+        prev_url = url_for('index', **url_kwargs)
+    else:
+        prev_url = None
 
     transactions_with_alias = []
     for transaction in transactions_paginated.items:
@@ -219,7 +233,7 @@ def index():
             'hash': transaction.hash
         })
 
-    return render_template('index.html', transactions=transactions_with_alias, filtered=filtered, min_amount=min_amount, date_range=date_range, time_frame_display=time_frame_display, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT, next_url=next_url, prev_url=prev_url, trim_account=trim_account)
+    return render_template('index.html', time_frame=time_frame, transactions=transactions_with_alias, filtered=filtered, min_amount=min_amount, date_range=date_range, time_frame_display=time_frame_display, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT, next_url=next_url, prev_url=prev_url, trim_account=trim_account)
 
 if __name__ == '__main__':
     app.run(host=os.getenv('HOST'), port=os.getenv('PORT'))
