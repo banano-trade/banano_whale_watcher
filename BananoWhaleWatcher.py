@@ -73,7 +73,7 @@ def reconnect_websocket():
     if ws is not None:
         ws.close()
     logging.info("Attempting to reconnect due to inactivity...")
-    start_websocket()
+    start_websocket_connection(websocket_url)
 
 def on_message(ws, message):
     with app.app_context():
@@ -88,16 +88,17 @@ def on_message(ws, message):
             if transaction_data["block"]["subtype"] == "send" and float(transaction_data.get("amount_decimal", 0)) > MINIMUM_DETECTABLE_BAN_AMOUNT:
                 sender = transaction_data["account"]
                 receiver = transaction_data["block"].get("link_as_account")
-
-                transaction = Transaction(
-                    sender=sender,
-                    receiver=receiver,
-                    amount_decimal=float(format(float(transaction_data["amount_decimal"]), '.2f')),
-                    time=transaction_time,
-                    hash=transaction_data["hash"]
-                )
-                db.session.add(transaction)
-                db.session.commit()
+                existing_transaction = Transaction.query.filter_by(hash=transaction_data["hash"]).first()
+                if not existing_transaction:
+                    transaction = Transaction(
+                        sender=sender,
+                        receiver=receiver,
+                        amount_decimal=float(format(float(transaction_data["amount_decimal"]), '.2f')),
+                        time=transaction_time,
+                        hash=transaction_data["hash"]
+                    )
+                    db.session.add(transaction)
+                    db.session.commit()
 
 def on_error(ws, error):
     logging.error(f"WebSocket error: {error}")
@@ -114,21 +115,20 @@ def on_open(ws):
 
 MAX_RETRIES = 10  # Maximum number of retries
 INITIAL_RETRY_DELAY = 1  # Initial delay in seconds before the first retry
-def start_websocket():
-    global ws, message_timer
-    urls = ["ws.banano.trade", "ws2.banano.trade"]
-    current_url_index = 0
+
+
+def start_websocket_connection(websocket_url):
+    global message_timer
     retry_count = 0
     retry_delay = INITIAL_RETRY_DELAY
 
     while retry_count < MAX_RETRIES:
         try:
-            websocket_url = f"wss://{urls[current_url_index]}"
             ws = websocket.WebSocketApp(websocket_url,
                                         on_open=on_open,
                                         on_message=on_message,
                                         on_error=on_error,
-                                        on_close=on_close)
+                                        on_close=lambda ws, code, msg: on_close(ws, code, msg, websocket_url))
 
             reset_message_timer()  # Start the timer when the WebSocket connection is established
             ws.run_forever()
@@ -142,12 +142,10 @@ def start_websocket():
             retry_count += 1
             logging.info(f"Retrying connection... Attempt {retry_count} to {websocket_url}")
 
-        # Alternate between the two URLs
-        current_url_index = (current_url_index + 1) % len(urls)
+        if message_timer is not None:
+            message_timer.cancel()  # Cancel the timer if max retries are reached
+    logging.error("Max retries reached. WebSocket client for URL {} stopped.".format(websocket_url))
 
-    if message_timer is not None:
-        message_timer.cancel()  # Cancel the timer if max retries are reached
-    logging.error("Max retries reached. WebSocket client stopped.")
 
 # Modify your existing on_close function to reset the timer
 def on_close(ws, close_status_code, close_msg):
@@ -158,9 +156,8 @@ def on_close(ws, close_status_code, close_msg):
         message_timer.cancel()  # Cancel the timer when the WebSocket is closed
     # Reconnect after 5 seconds
     time.sleep(5)
-    start_websocket()
-# Start WebSocket in a separate thread
-threading.Thread(target=start_websocket).start()
+    logging.info("Reconnecting...")
+    start_websocket_connection(websocket_url)
 
 @app.route('/websocket-status')
 def websocket_status():
@@ -258,4 +255,9 @@ def index():
     return render_template('index.html', time_frame=time_frame, transactions=transactions_with_alias, filtered=filtered, min_amount=min_amount, date_range=date_range, time_frame_display=time_frame_display, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT, next_url=next_url, prev_url=prev_url, trim_account=trim_account)
 
 if __name__ == '__main__':
+    urls = ["ws.banano.trade", "ws2.banano.trade"]
+    for url in urls:
+        websocket_url = f"wss://{url}"
+        threading.Thread(target=start_websocket_connection, args=(websocket_url,)).start()
+
     app.run(host=os.getenv('HOST'), port=os.getenv('PORT'))
