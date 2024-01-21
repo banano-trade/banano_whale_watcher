@@ -16,6 +16,7 @@ import time
 # Global variable to store aliases
 account_aliases = {}
 websocket_connected = False
+ws = None
 
 def trim_account(account):
     if account and len(account) > 30:
@@ -125,10 +126,10 @@ def start_websocket_connection(websocket_url):
     while retry_count < MAX_RETRIES:
         try:
             ws = websocket.WebSocketApp(websocket_url,
-                                        on_open=on_open,
-                                        on_message=on_message,
-                                        on_error=on_error,
-                                        on_close=lambda ws, code, msg: on_close(ws, code, msg, websocket_url))
+                on_open=on_open,
+                on_message=on_message,
+                on_error=on_error,
+                on_close=lambda ws, code, msg: on_close(ws, code, msg, websocket_url))
 
             reset_message_timer()  # Start the timer when the WebSocket connection is established
             ws.run_forever()
@@ -252,7 +253,7 @@ def index():
             'hash': transaction.hash
         })
 
-    return render_template('index.html', time_frame=time_frame, transactions=transactions_with_alias, filtered=filtered, min_amount=min_amount, date_range=date_range, time_frame_display=time_frame_display, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT, next_url=next_url, prev_url=prev_url, trim_account=trim_account)
+    return render_template('index.html', time_frame=time_frame, transactions=transactions_with_alias, filtered=filtered, min_amount=min_amount, date_range=date_range.lower(), time_frame_display=time_frame_display, MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT, next_url=next_url, prev_url=prev_url, trim_account=trim_account)
 
 if __name__ == '__main__':
     urls = ["ws.banano.trade", "ws2.banano.trade"]

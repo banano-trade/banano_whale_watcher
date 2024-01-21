@@ -312,9 +312,9 @@
         <!-- Latest Transactions Table -->
         {% if filtered %}
         {% if date_range %}
-        <h2>Latest Transactions with &gt;{{ min_amount }} BAN within {{ date_range }}</h2>
+        <h2>Latest Transactions with &gt;{{ min_amount }} BAN within the {{ date_range }}</h2>
         {% else %}
-        <h2>Latest Transactions with &gt;{{ min_amount }} BAN within the {{ time_frame_display }}</h2>
+        <h2>Latest Transactions with &gt;{{ min_amount }} BAN within {{ time_frame_display }}</h2>
         {% endif %}
         {% else %}
         <h2>Latest Transactions with &gt;{{ MINIMUM_DETECTABLE_BAN_AMOUNT }} BAN</h2>
