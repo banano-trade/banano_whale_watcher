@@ -65,7 +65,9 @@ MESSAGE_TIMEOUT = 60  # 60 seconds
 def reset_message_timer():
     global message_timer
     if message_timer is not None:
-        message_timer.cancel()
+        message_timer.cancel()  # Stop the previous timer
+        message_timer = None   # Dereference the previous timer
+
     message_timer = threading.Timer(MESSAGE_TIMEOUT, reconnect_websocket)
     message_timer.start()
 
@@ -89,17 +91,18 @@ def on_message(ws, message):
             if transaction_data["block"]["subtype"] == "send" and float(transaction_data.get("amount_decimal", 0)) > MINIMUM_DETECTABLE_BAN_AMOUNT:
                 sender = transaction_data["account"]
                 receiver = transaction_data["block"].get("link_as_account")
-                existing_transaction = Transaction.query.filter_by(hash=transaction_data["hash"]).first()
-                if not existing_transaction:
-                    transaction = Transaction(
-                        sender=sender,
-                        receiver=receiver,
-                        amount_decimal=float(format(float(transaction_data["amount_decimal"]), '.2f')),
-                        time=transaction_time,
-                        hash=transaction_data["hash"]
-                    )
-                    db.session.add(transaction)
-                    db.session.commit()
+                if sender != receiver: # Ignore self transactions
+                    existing_transaction = Transaction.query.filter_by(hash=transaction_data["hash"]).first()
+                    if not existing_transaction:
+                        transaction = Transaction(
+                            sender=sender,
+                            receiver=receiver,
+                            amount_decimal=float(format(float(transaction_data["amount_decimal"]), '.2f')),
+                            time=transaction_time,
+                            hash=transaction_data["hash"]
+                        )
+                        db.session.add(transaction)
+                        db.session.commit()
 
 def on_error(ws, error):
     logging.error(f"WebSocket error: {error}")
@@ -117,19 +120,20 @@ def on_open(ws):
 MAX_RETRIES = 10  # Maximum number of retries
 INITIAL_RETRY_DELAY = 1  # Initial delay in seconds before the first retry
 
+run_websocket_thread = True
 
 def start_websocket_connection(websocket_url):
-    global message_timer
+    global run_websocket_thread
     retry_count = 0
     retry_delay = INITIAL_RETRY_DELAY
 
-    while retry_count < MAX_RETRIES:
+    while run_websocket_thread and retry_count < MAX_RETRIES:
         try:
             ws = websocket.WebSocketApp(websocket_url,
                 on_open=on_open,
                 on_message=on_message,
                 on_error=on_error,
-                on_close=lambda ws, code, msg: on_close(ws, code, msg, websocket_url))
+                on_close=lambda ws, code, msg: on_close(ws, code, msg))
 
             reset_message_timer()  # Start the timer when the WebSocket connection is established
             ws.run_forever()
@@ -141,11 +145,12 @@ def start_websocket_connection(websocket_url):
             time.sleep(retry_delay)
             retry_delay *= 2  # Exponential backoff
             retry_count += 1
-            logging.info(f"Retrying connection... Attempt {retry_count} to {websocket_url}")
+            logging.info(f"Retrying connection... Attempt {retry_count}")
 
         if message_timer is not None:
             message_timer.cancel()  # Cancel the timer if max retries are reached
-    logging.error("Max retries reached. WebSocket client for URL {} stopped.".format(websocket_url))
+
+    logging.info("WebSocket thread is stopping.")
 
 
 # Modify your existing on_close function to reset the timer
@@ -257,8 +262,17 @@ def index():
 
 if __name__ == '__main__':
     urls = ["ws.banano.trade", "ws2.banano.trade"]
+    websocket_threads = []
     for url in urls:
         websocket_url = f"wss://{url}"
-        threading.Thread(target=start_websocket_connection, args=(websocket_url,)).start()
+        thread = threading.Thread(target=start_websocket_connection, args=(websocket_url,))
+        thread.start()
+        websocket_threads.append(thread)
 
+    # Run your Flask app
     app.run(host=os.getenv('HOST'), port=os.getenv('PORT'))
+
+    # When the Flask app exits, stop the WebSocket threads
+    run_websocket_thread = False
+    for thread in websocket_threads:
+        thread.join()  # Wait for threads to finish
