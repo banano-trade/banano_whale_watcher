@@ -109,7 +109,41 @@ class WebSocketManager:
         ws.send(json.dumps(subscribe_message))
 
     def on_message(self, ws, message):
-        self.last_message_time = datetime.utcnow()
+        with app.app_context():
+            self.last_message_time = datetime.utcnow()
+            global last_message_time
+            data = json.loads(message)
+            if data.get("topic") == "confirmation":
+                last_message_time = datetime.utcnow()
+                transaction_data = data["message"]
+                transaction_time = datetime.fromtimestamp(
+                    int(data["time"]) / 1000, timezone.utc
+                )
+
+                # Check if the subtype is 'send' and the amount is greater than the limit
+                if (
+                    transaction_data["block"]["subtype"] == "send"
+                    and float(transaction_data.get("amount_decimal", 0))
+                    > MINIMUM_DETECTABLE_BAN_AMOUNT
+                ):
+                    sender = transaction_data["account"]
+                    receiver = transaction_data["block"].get("link_as_account")
+                    if sender != receiver:  # Ignore self transactions
+                        existing_transaction = Transaction.query.filter_by(
+                            hash=transaction_data["hash"]
+                        ).first()
+                        if not existing_transaction:
+                            transaction = Transaction(
+                                sender=sender,
+                                receiver=receiver,
+                                amount_decimal=float(
+                                    format(float(transaction_data["amount_decimal"]), ".2f")
+                                ),
+                                time=transaction_time,
+                                hash=transaction_data["hash"],
+                            )
+                            db.session.add(transaction)
+                            db.session.commit()
 
     def on_error(self, ws, error):
         logging.error(f"WebSocket error: {error}")
