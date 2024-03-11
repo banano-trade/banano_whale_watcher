@@ -1,227 +1,149 @@
 from flask import Flask, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
+from dotenv import load_dotenv
 import threading
 import websocket
-import json
+import requests
+import logging
 import time
 from datetime import datetime, timedelta, timezone
 from extensions import db
 import os
-from dotenv import load_dotenv
-import logging
+import json
+
 load_dotenv()
-import requests
-from threading import Thread
-import time
+logging.basicConfig(level=logging.INFO)
 
-# Global variable to store aliases
-account_aliases = {}
-websocket_connected = False
-ws = None
-retry_count = 0
-
-
-def trim_account(account):
-    if account and len(account) > 30:
-        return f"{account[:10]}...{account[-6:]}"
-    return account
-
-
-def fetch_aliases():
-    global account_aliases
-    while True:
-        try:
-            response = requests.post("https://api.spyglass.pw/banano/v1/known/accounts")
-            if response.status_code == 200:
-                aliases = response.json()
-                account_aliases = {item["address"]: item["alias"] for item in aliases}
-        except Exception as e:
-            logging.error(f"Failed to fetch aliases: {e}")
-
-        # Wait for one day (86400 seconds) before fetching again
-        time.sleep(86400)
-
-
-# Start the alias fetching thread
-alias_thread = Thread(target=fetch_aliases)
-alias_thread.start()
-
+# Initialize Flask and SQLAlchemy
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///transactions.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-MINIMUM_DETECTABLE_BAN_AMOUNT = 10000
-PER_PAGE = 20
-
 db.init_app(app)
 
 # Import models after initializing db with app
 from models import Transaction
 
-
-def create_tables():
-    db.create_all()
-
-
-with app.app_context():
-    create_tables()  # Create tables before starting the application
-
-# Global variable for the message timer
-message_timer = None
-MESSAGE_TIMEOUT = 60  # 60 seconds
+# Constants
+MINIMUM_DETECTABLE_BAN_AMOUNT = 10000
+PER_PAGE = 20
+MAX_RETRIES = 10
+INITIAL_RETRY_DELAY = 1
 
 
-def reset_message_timer():
-    global message_timer
-    if message_timer is not None:
-        message_timer.cancel()  # Stop the previous timer
-        message_timer = None  # Dereference the previous timer
+class AliasManager:
+    def __init__(self):
+        self.aliases = {}
+        self.update_thread = threading.Thread(target=self.fetch_aliases)
+        self.update_thread.daemon = True
+        self.update_thread.start()
 
-    message_timer = threading.Timer(MESSAGE_TIMEOUT, reconnect_websocket)
-    message_timer.start()
+    def fetch_aliases(self):
+        while True:
+            try:
+                response = requests.post("https://api.spyglass.pw/banano/v1/known/accounts")
+                if response.status_code == 200:
+                    aliases = response.json()
+                    self.aliases = {item["address"]: item["alias"] for item in aliases}
+            except Exception as e:
+                logging.error(f"Failed to fetch aliases: {e}")
+            time.sleep(86400)
 
+    def get_alias(self, account):
+        return self.aliases.get(account, account)
 
-def reconnect_websocket():
-    global ws, retry_count
-    if retry_count >= MAX_RETRIES:
-        logging.error("Max retries reached, will not attempt to reconnect.")
-        return
-
-    if ws is not None:
-        ws.close()
-
-    logging.info("Attempting to reconnect after a delay due to inactivity...")
-    time.sleep(INITIAL_RETRY_DELAY)  # Delay before attempting to reconnect
-    start_websocket_connection(websocket_url)
-
-
-def on_message(ws, message):
-    with app.app_context():
-        global last_message_time
-        data = json.loads(message)
-        if data.get("topic") == "confirmation":
-            last_message_time = datetime.utcnow()
-            transaction_data = data["message"]
-            transaction_time = datetime.fromtimestamp(
-                int(data["time"]) / 1000, timezone.utc
-            )
-
-            # Check if the subtype is 'send' and the amount is greater than the limit
-            if (
-                transaction_data["block"]["subtype"] == "send"
-                and float(transaction_data.get("amount_decimal", 0))
-                > MINIMUM_DETECTABLE_BAN_AMOUNT
-            ):
-                sender = transaction_data["account"]
-                receiver = transaction_data["block"].get("link_as_account")
-                if sender != receiver:  # Ignore self transactions
-                    existing_transaction = Transaction.query.filter_by(
-                        hash=transaction_data["hash"]
-                    ).first()
-                    if not existing_transaction:
-                        transaction = Transaction(
-                            sender=sender,
-                            receiver=receiver,
-                            amount_decimal=float(
-                                format(float(transaction_data["amount_decimal"]), ".2f")
-                            ),
-                            time=transaction_time,
-                            hash=transaction_data["hash"],
-                        )
-                        db.session.add(transaction)
-                        db.session.commit()
+    @staticmethod
+    def trim_account(account):
+        if account and len(account) > 30:
+            return f"{account[:10]}...{account[-6:]}"
+        return account
 
 
-def on_error(ws, error):
-    logging.error(f"WebSocket error: {error}")
+alias_manager = AliasManager()
 
 
-def on_open(ws):
-    global websocket_connected
-    websocket_connected = True
-    subscribe_message = {
-        "action": "subscribe",
-        "topic": "confirmation",
-        "options": {"confirmation_type": "all"},
-    }
-    ws.send(json.dumps(subscribe_message))
+class WebSocketManager:
+    def __init__(self, urls):
+        self.urls = urls
+        self.ws = None
+        self.retry_count = 0
+        self.connected = False
+        self.lock = threading.Lock()
+        self.threads = []
+        self.last_message_time = None
+
+    def start_connections(self):
+        for url in self.urls:
+            websocket_url = f"wss://{url}"
+            thread = threading.Thread(target=self.connect, args=(websocket_url,))
+            thread.start()
+            self.threads.append(thread)
+
+    def connect(self, websocket_url):
+        retry_delay = INITIAL_RETRY_DELAY
+        while self.retry_count < MAX_RETRIES:
+            try:
+                with self.lock:
+                    self.ws = websocket.WebSocketApp(
+                        websocket_url,
+                        on_open=self.on_open,
+                        on_message=self.on_message,
+                        on_error=self.on_error,
+                        on_close=self.on_close,
+                    )
+                self.ws.run_forever()
+                self.retry_count = 0  # Reset retry count after a successful connection
+                break  # Exit the loop after successful connection
+            except Exception as e:
+                logging.error(f"WebSocket connection failed: {e}")
+                self.retry_count += 1
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+
+    def on_open(self, ws):
+        self.connected = True
+        subscribe_message = {
+            "action": "subscribe",
+            "topic": "confirmation",
+            "options": {"confirmation_type": "all"},
+        }
+        ws.send(json.dumps(subscribe_message))
+
+    def on_message(self, ws, message):
+        self.last_message_time = datetime.utcnow()
+
+    def on_error(self, ws, error):
+        logging.error(f"WebSocket error: {error}")
+
+    def on_close(self, ws, close_status_code, close_msg):
+        self.connected = False
+        # Attempt to reconnect
+        time.sleep(5)
+        self.start_connections()
+
+    def shutdown(self):
+        with self.lock:
+            if self.ws:
+                self.ws.close()
 
 
-MAX_RETRIES = 10  # Maximum number of retries
-INITIAL_RETRY_DELAY = 1  # Initial delay in seconds before the first retry
-
-run_websocket_thread = True
-ws_lock = threading.Lock()
-
-
-def start_websocket_connection(websocket_url):
-    global ws, retry_count
-    retry_delay = INITIAL_RETRY_DELAY
-
-    while run_websocket_thread and retry_count < MAX_RETRIES:
-        try:
-            with ws_lock:
-                if ws is not None:
-                    ws.close()
-                    ws = None
-
-            ws = websocket.WebSocketApp(
-                websocket_url,
-                on_open=on_open,
-                on_message=on_message,
-                on_error=on_error,
-                on_close=on_close,
-            )
-            ws.run_forever()
-            logging.info("WebSocket connection established successfully.")
-            retry_count = 0  # Reset retry count after a successful connection
-            return  # Exit the function after successful connection
-        except Exception as e:
-            logging.error(f"WebSocket connection failed: {e}")
-            retry_count += 1
-            time.sleep(retry_delay)
-            retry_delay *= 2  # Exponential backoff
-
-    logging.error("Reached maximum retry attempts, stopping reconnection attempts.")
-    if message_timer:
-        message_timer.cancel()
-
-# Modify your existing on_close function to reset the timer
-def on_close(ws, close_status_code, close_msg):
-    global websocket_connected
-    websocket_connected = False
-    global message_timer
-    if message_timer is not None:
-        message_timer.cancel()  # Cancel the timer when the WebSocket is closed
-    # Reconnect after 5 seconds
-    time.sleep(5)
-    logging.info("Reconnecting...")
-    start_websocket_connection(websocket_url)
+ws_manager = WebSocketManager(urls=["ws.banano.trade", "ws2.banano.trade"])
 
 
 @app.route("/websocket-status")
 def websocket_status():
-    global last_message_time, websocket_connected
     try:
-        if websocket_connected and last_message_time:
-            last_message_str = last_message_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+        if ws_manager.connected and ws_manager.last_message_time:
+            last_message_str = ws_manager.last_message_time.strftime("%Y-%m-%d %H:%M:%S UTC")
             last_message_ago = int(
-                (datetime.utcnow() - last_message_time).total_seconds()
+                (datetime.utcnow() - ws_manager.last_message_time).total_seconds()
             )
-            if last_message_ago > 3600:
-                return {
-                    "status": False,
-                    "last_message": "Last message is older than an hour ago",
-                    "last_message_ago": last_message_ago,
-                }
+            status = {"status": True, "last_message": last_message_str, "last_message_ago": last_message_ago}
         else:
-            last_message_str = "No message received"
-        return {
-            "status": websocket_connected,
-            "last_message": last_message_str,
-            "last_message_ago": last_message_ago,
-        }
-    except:
-        return {"status": False, "last_message": "No message received"}
+            status = {"status": False, "last_message": "No message received"}
+        return status
+    except Exception as e:
+        logging.error(f"Error in websocket-status: {e}")
+        return {"status": False, "last_message": "Error fetching status"}
 
 
 @app.route("/", methods=["GET"])
@@ -275,6 +197,7 @@ def index():
         Transaction.time <= end_time,
         Transaction.amount_decimal > min_amount,
     ).order_by(Transaction.time.desc())
+
     # Pagination URL Generation with Custom Date Range Support
     url_kwargs = {
         "min_amount": min_amount,
@@ -300,8 +223,9 @@ def index():
 
     transactions_with_alias = []
     for transaction in transactions_paginated.items:
-        sender_alias = account_aliases.get(transaction.sender, transaction.sender)
-        receiver_alias = account_aliases.get(transaction.receiver, transaction.receiver)
+        # Use alias_manager to get sender and receiver aliases
+        sender_alias = alias_manager.get_alias(transaction.sender)
+        receiver_alias = alias_manager.get_alias(transaction.receiver)
         transactions_with_alias.append(
             {
                 "time": transaction.time.isoformat(),
@@ -323,41 +247,20 @@ def index():
         MINIMUM_DETECTABLE_BAN_AMOUNT=MINIMUM_DETECTABLE_BAN_AMOUNT,
         next_url=next_url,
         prev_url=prev_url,
-        trim_account=trim_account,
+        trim_account=AliasManager.trim_account
     )
 
-def shutdown_server():
-    global run_websocket_thread, websocket_threads, message_timer
 
-    logging.info("Shutting down server...")
+def create_tables():
+    with app.app_context():
+        db.create_all()
 
-    # Stop the WebSocket connection threads
-    run_websocket_thread = False
-    for thread in websocket_threads:
-        if thread.is_alive():
-            thread.join()
-
-    # Cancel the message timer if it's running
-    if message_timer:
-        message_timer.cancel()
-        message_timer = None
-
-    # Close WebSocket connection if it's open
-    if ws:
-        ws.close()
-
-    logging.info("Server shutdown successfully.")
 
 if __name__ == "__main__":
+    with app.app_context():
+        create_tables()  # Create tables before starting the application
+    ws_manager.start_connections()
     try:
-        urls = ["ws.banano.trade", "ws2.banano.trade"]
-        websocket_threads = []
-        for url in urls:
-            websocket_url = f"wss://{url}"
-            thread = threading.Thread(target=start_websocket_connection, args=(websocket_url,))
-            thread.start()
-            websocket_threads.append(thread)
-
         app.run(host=os.getenv("HOST"), port=os.getenv("PORT"))
     finally:
-        shutdown_server()  # Ensure the server and its resources are cleanly shut down
+        ws_manager.shutdown()
