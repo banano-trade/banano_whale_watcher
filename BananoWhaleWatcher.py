@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from extensions import db
 import os
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -68,15 +69,15 @@ class WebSocketManager:
         self.retry_count = 0
         self.connected = False
         self.lock = threading.Lock()
-        self.threads = []
         self.last_message_time = None
+        # Initialize ThreadPoolExecutor with a maximum of 5 worker threads
+        self.executor = ThreadPoolExecutor(max_workers=5)
 
     def start_connections(self):
+        # Submit connection tasks directly to the executor
         for url in self.urls:
             websocket_url = f"wss://{url}"
-            thread = threading.Thread(target=self.connect, args=(websocket_url,))
-            thread.start()
-            self.threads.append(thread)
+            self.executor.submit(self.connect, websocket_url)
 
     def connect(self, websocket_url):
         retry_delay = INITIAL_RETRY_DELAY
@@ -159,6 +160,7 @@ class WebSocketManager:
             if self.ws:
                 self.ws.close()
 
+            self.executor.shutdown(wait=True)  # Gracefully shutdown the executor
 
 ws_manager = WebSocketManager(urls=["ws.banano.trade", "ws2.banano.trade"])
 
